@@ -11,7 +11,7 @@ pub fn load_existing_configurations() -> Result<Vec<WireguardConfig>> {
 
     for entry in fs::read_dir(TUNNELS_PATH)? {
         let file = entry?;
-        if file.file_type()?.is_file() {
+        if file.file_type()?.is_file() && file.path().extension().map_or(false, |e| e == "conf") {
             let file_path = file.path();
             let file_content = fs::read_to_string(&file_path)?;
             let mut cfg = parse_config(&file_content).map_err(Error::other)?;

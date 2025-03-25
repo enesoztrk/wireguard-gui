@@ -29,6 +29,7 @@ enum AppMsg {
     AddPeer,
     ShowGenerator,
     Error(String),
+    Info(String),
     Ignore,
 }
 
@@ -58,17 +59,17 @@ impl SimpleComponent for App {
                     },
 
                     gtk::Box {
-                        gtk::Button {
-                            set_label: "Add Tunnel",
-                            connect_clicked => Self::Input::AddTunnel(Box::default()),
-                        },
+                        // gtk::Button {
+                        //     set_label: "Add Tunnel",
+                        //     connect_clicked => Self::Input::AddTunnel(Box::default()),
+                        // },
 
-                        append: model.import_button.widget(),
+                        append: model.import_button.widget()
 
-                        gtk::Button {
-                            set_label: "Generate Configs",
-                            connect_clicked => Self::Input::ShowGenerator,
-                        }
+                        // gtk::Button {
+                        //     set_label: "Generate Configs",
+                        //     connect_clicked => Self::Input::ShowGenerator,
+                        // }
                     },
                 },
                 #[wrap(Some)]
@@ -242,11 +243,17 @@ impl SimpleComponent for App {
                     return;
                 };
                 if let Some(selected_tunnel) = self.tunnels.guard().get_mut(idx) {
+                    if selected_tunnel.active {
+                        sender.input(Self::Input::Error(format!("Tunnel should be disabled before saving the configuration")));
+                        return;
+                    }
                     let new_tunnel = Tunnel::new(*config);
                     if let Err(e) = fs::write(new_tunnel.path(), write_config(&new_tunnel.config)) {
                         sender.input(Self::Input::Error(format!("{:#?}", e)));
                         return;
                     }
+                    sender.input(Self::Input::Info(format!("Configuration saved to {:#?}", new_tunnel.path())));
+
                     *selected_tunnel = new_tunnel.clone();
                 }
             }
@@ -263,6 +270,18 @@ impl SimpleComponent for App {
                     .model
                     .settings
                     .secondary_text = Some(msg);
+                self.alert_dialog.state().get_mut().model.settings.text = String::from("Error");
+
+                self.alert_dialog.emit(AlertMsg::Show);
+            }
+            Self::Input::Info(msg) => {
+                self.alert_dialog
+                    .state()
+                    .get_mut()
+                    .model
+                    .settings
+                    .secondary_text = Some(msg);
+                self.alert_dialog.state().get_mut().model.settings.text = String::from("Info");
                 self.alert_dialog.emit(AlertMsg::Show);
             }
             Self::Input::Ignore => (),
@@ -271,7 +290,18 @@ impl SimpleComponent for App {
 }
 
 fn main() {
-    karen::builder().wrapper("pkexec").with_env(&["DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_DATA_DIRS", "LIBGL_ALWAYS_SOFTWARE", "PATH"]).unwrap();
+    karen::builder()
+        .wrapper("pkexec")
+        .with_env(&[
+            "DISPLAY",
+            "XAUTHORITY",
+            "WAYLAND_DISPLAY",
+            "XDG_RUNTIME_DIR",
+            "XDG_DATA_DIRS",
+            "LIBGL_ALWAYS_SOFTWARE",
+            "PATH",
+        ])
+        .unwrap();
 
     let app = RelmApp::new("relm4.ghaf.wireguard-gui");
     app.run::<App>(());
