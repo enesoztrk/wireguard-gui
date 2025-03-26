@@ -1,8 +1,7 @@
 use std::{
-    fs,
-    io::{self, Read},
+    io::{self},
     path::{Path, PathBuf},
-    process::{Child, Command, ExitStatus, Stdio},
+    process::Command,
 };
 
 use gtk::prelude::*;
@@ -13,14 +12,13 @@ use crate::utils::*;
 use getifaddrs::{getifaddrs, InterfaceFlags};
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::time::Duration;
-use wait_timeout::ChildExt;
+
 #[derive(PartialEq)]
 pub enum NetState {
-    IPLINK_UP = 0x01,
-    IPLINK_DOWN = 0x02,
-    WG_QUICK_UP = 0x04,
-    WG_QUICK_DOWN = 0x08,
+    IplinkUp = 0x01,
+    IplinkDown = 0x02,
+    WgQuickUp = 0x04,
+    WgQuickDown = 0x08,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone)]
@@ -34,9 +32,7 @@ impl Tunnel {
     pub fn new(config: WireguardConfig) -> Self {
         let name = config.interface.name.clone().unwrap_or("unknown".into());
 
-        let mut active = false;
-
-        active = Self::is_wg_iface_running(&name) == NetState::WG_QUICK_UP;
+       let active = Self::is_wg_iface_running(&name) == NetState::WgQuickUp;
 
         Self {
             name,
@@ -45,40 +41,7 @@ impl Tunnel {
         }
     }
 
-    /// Run a command with a timeout and return the exit status and stdout output.
-    fn run_cmd_with_timeout(
-        cmd: &mut Child,
-        timeout: u64,
-    ) -> Result<(Option<i32>, String), io::Error> {
-        let one_sec = Duration::from_secs(timeout);
-        println!("Running command: {:?}", cmd);
-        // Wait for the process to exit or timeout
-        let status_code = match cmd.wait_timeout(one_sec)? {
-            Some(status) => {
-                cmd.kill()?;
-                status.code()
-            }
-            None => {
-                // Process hasn't exited yet, kill it and get the status code
-                println!("Killing the process: {:?}", cmd);
-                cmd.kill()?;
-                cmd.wait()?.code()
-            }
-        };
 
-        // Read stdout after killing the process
-        let mut s = String::new();
-
-        // Borrow stdout and read the output into `s`
-        if let Some(stdout) = cmd.stdout.as_mut() {
-            stdout.read_to_string(&mut s)?;
-        }
-
-        // Print the output line-by-line
-        println!("Status code: {:?},output:{:?}", status_code, s);
-        // Return both the status code and the output
-        Ok((status_code, s))
-    }
 
     fn is_interface_up(interface_name: &str) -> Result<bool, std::io::Error> {
         let ifaddrs = getifaddrs().map_err(|_| {
@@ -104,19 +67,19 @@ impl Tunnel {
             .spawn()
             .expect("Failed to execute wg show");
         println!("wg show {}", interface);
-        if !Self::run_cmd_with_timeout(&mut wg_output, 5)
+        if !run_cmd_with_timeout(&mut wg_output, 5)
             .map(|(code, output)| code == Some(0) && !output.is_empty())
             .unwrap_or(false)
         {
             println!("Interface {} is not running", interface);
-            return NetState::WG_QUICK_DOWN;
+            return NetState::WgQuickDown;
         }
 
         if !Self::is_interface_up(interface).unwrap_or(false) {
-            return NetState::IPLINK_DOWN;
+            return NetState::IplinkDown;
         }
         println!("Interface {} is running", interface);
-        NetState::WG_QUICK_UP
+        NetState::WgQuickUp
     }
 
     pub fn path(&self) -> PathBuf {
@@ -147,7 +110,7 @@ impl Tunnel {
                 .args([action, &self.name])
                 .spawn()?;
             println!("wg-quick {}", action);
-            if !Self::run_cmd_with_timeout(&mut cmd, 3)
+            if !run_cmd_with_timeout(&mut cmd, 3)
                 .map(|(code, _)| code == Some(0))
                 .unwrap_or(false)
             {
@@ -162,20 +125,20 @@ impl Tunnel {
         let state = Self::is_wg_iface_running(self.name.as_str());
 
         // Check if the endpoint is valid before wireguard inteface is up
-        if state !=  NetState::WG_QUICK_UP {
+        if state !=  NetState::WgQuickUp {
 
             is_endpoint_valid(&self.config)?;
         }
 
         match state {
-            NetState::IPLINK_DOWN => {
+            NetState::IplinkDown => {
                 run_wg_quick("down")?;
                 run_wg_quick("up")?;
             }
-            NetState::WG_QUICK_UP => {
+            NetState::WgQuickUp => {
                 run_wg_quick("down")?;
             }
-            NetState::WG_QUICK_DOWN => {
+            NetState::WgQuickDown => {
                 run_wg_quick("up")?;
             }
             _ => {

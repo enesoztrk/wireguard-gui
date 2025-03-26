@@ -4,7 +4,7 @@ use relm4::{gtk::prelude::*, prelude::*};
 
 use crate::config::*;
 use crate::peer::*;
-
+use crate::utils;
 pub struct OverviewModel {
     interface: Interface,
     peers: FactoryVecDeque<PeerComp>,
@@ -122,6 +122,8 @@ impl SimpleComponent for OverviewModel {
                         attach[1, 3, 1, 1] = &gtk::Label {
                             #[watch]
                             set_text: get_value(&model.interface.public_key),
+                            set_selectable: true,
+                            set_xalign: 0.0,
                             // connect_editing_notify[sender] => move |l| {
                             //     if !l.is_editing() {
                             //         let new: String = l.text().trim().into();
@@ -316,7 +318,12 @@ impl SimpleComponent for OverviewModel {
                 InterfaceSetKind::Name => self.interface.name = value,
                 InterfaceSetKind::Address => self.interface.address = value,
                 InterfaceSetKind::ListenPort => self.interface.listen_port = value,
-                InterfaceSetKind::PrivateKey => self.interface.private_key = value,
+                InterfaceSetKind::PrivateKey => {
+                       //TODO: this should be removed in next release
+                       self.interface.public_key =
+                       Some(utils::generate_public_key(value.clone().unwrap_or_default()).unwrap_or("Wrong private key".to_string()));
+                       println!("public key: {:?}", self.interface.public_key);
+                    self.interface.private_key = value},
                 InterfaceSetKind::Dns => self.interface.dns = value,
                 InterfaceSetKind::Table => self.interface.table = value,
                 InterfaceSetKind::Mtu => self.interface.mtu = value,

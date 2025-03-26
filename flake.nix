@@ -20,22 +20,20 @@
     };
   };
 
-  outputs =
-    {
-      self,
-      nixpkgs,
-      flake-utils,
-      crane,
-      rust-overlay,
-      advisory-db,
-      ...
-    }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
-      let
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+    crane,
+    rust-overlay,
+    advisory-db,
+    ...
+  }:
+    flake-utils.lib.eachSystem ["x86_64-linux" "aarch64-linux"] (
+      system: let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [ (import rust-overlay) ];
+          overlays = [(import rust-overlay)];
         };
 
         inherit (pkgs) lib;
@@ -45,38 +43,33 @@
         commonArgs = {
           inherit src;
           strictDeps = true;
-        nativeBuildInputs = with pkgs; [ pkg-config wrapGAppsHook ];
+          nativeBuildInputs = with pkgs; [pkg-config wrapGAppsHook];
 
           buildInputs = with pkgs; [
-            openssl
-            pkg-config
-            eza
-            fd
-            clang
-            #cargo-audit
-            cargo-tarpaulin
-             wireguard-tools
-    glib.dev
-    gtk4.dev
-    polkit
+            wireguard-tools
+            glib
+            gtk4
+            polkit
+            gsettings-desktop-schemas
           ];
         };
 
-        individualCrateArgs = commonArgs // {
-          inherit cargoArtifacts;
-          inherit (craneLib.crateNameFromCargoToml { inherit src; }) version;
-          doNotPostBuildInstallCargoBinaries = true;
+        individualCrateArgs =
+          commonArgs
+          // {
+            inherit cargoArtifacts;
+            inherit (craneLib.crateNameFromCargoToml {inherit src;}) version;
+            doNotPostBuildInstallCargoBinaries = true;
 
-          doCheck = false;
-          cargoVendorDir = craneLib.vendorMultipleCargoDeps {
-            inherit (craneLib.findCargoFiles src) cargoConfigs;
-            cargoLockList = [ ./Cargo.lock ];
+            doCheck = false;
+            cargoVendorDir = craneLib.vendorMultipleCargoDeps {
+              inherit (craneLib.findCargoFiles src) cargoConfigs;
+              cargoLockList = [./Cargo.lock];
+            };
           };
-        };
 
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-        fileSetForCrate =
-          crate:
+        fileSetForCrate = crate:
           lib.fileset.toSource {
             root = ./.;
             fileset = lib.fileset.unions [
@@ -91,7 +84,7 @@
         # Run squence cmd: 'nix flake check'
         # 1. Check formatting
         nwPcktFwdPackage-cargoFmt = craneLib.cargoFmt (
-          individualCrateArgs // { inherit src cargoArtifacts; }
+          individualCrateArgs // {inherit src cargoArtifacts;}
         );
 
         #  2. Run clippy (and deny all warnings) on the crate source.
@@ -101,7 +94,7 @@
             # Again we apply some extra arguments only to this derivation
             # and not every where else. In this case we add some clippy flags
             cargoArtifacts = nwPcktFwdPackage-cargoFmt;
-            nativeBuildInputs = with pkgs; [ ];
+            nativeBuildInputs = with pkgs; [];
             preBuild = ''
               cargo build --release
             '';
@@ -112,7 +105,7 @@
         # 3. we want to run the tests and collect code-coverage, _but only if
         # the clippy checks pass_ so we do not waste any extra cycles.
         nwPcktFwdPackage-cargoTarpaulin = craneLib.cargoTarpaulin (
-          individualCrateArgs // { cargoArtifacts = nwPcktFwdPackage-cargoClippy; }
+          individualCrateArgs // {cargoArtifacts = nwPcktFwdPackage-cargoClippy;}
         );
 
         # 4. cargo-audit
@@ -124,8 +117,7 @@
           }
         );
 
-        mkwireguardGuiPackage =
-          buildType:
+        mkwireguardGuiPackage = buildType:
           craneLib.buildPackage (
             individualCrateArgs
             // {
@@ -140,7 +132,7 @@
                 fd
                 clang
                 cargo-audit
-                wrapGAppsHook
+                wrapGAppsHook4
               ];
               buildPhaseCargoCommand = ''
                 if [[ "${buildType}" == "release" ]]; then
@@ -153,38 +145,43 @@
 
               installPhase = ''
                 mkdir -p $out/bin
-                install -D -m755 target/${buildType}/wireguard-gui $out/bin/${buildType}/wireguard-gui
+                install target/${buildType}/wireguard-gui $out/bin/wireguard-gui
               '';
-               postFixup = ''
-            wrapProgram $out/bin/${buildType}/wireguard-gui \
-              --set LIBGL_ALWAYS_SOFTWARE true \
-              --set G_MESSAGES_DEBUG all
-          '';
+              postFixup = ''
+                wrapProgram $out/bin/wireguard-gui \
+                  --set LIBGL_ALWAYS_SOFTWARE true \
+                  --set G_MESSAGES_DEBUG all
+              '';
             }
           );
         # Create packages for different build types
         wireguardGuiRelease = mkwireguardGuiPackage "release";
         wireguardGuiDebug = mkwireguardGuiPackage "debug";
       in
-      with pkgs;
-      {
-        formatter = pkgs.alejandra;
-        packages = {
-          inherit wireguardGuiRelease wireguardGuiDebug;
-          default = wireguardGuiRelease; # Default to release build
-        };
-        checks = {
-          inherit
-            # Build the crate as part of `nix flake check` for convenience
-            wireguardGuiRelease
-        #    nwPcktFwdPackage-cargoAudit
-            ;
-        };
-        devShells.default = craneLib.devShell {
-          # Inherit inputs from checks.
-          checks = self.checks.${system};
-          inherit (commonArgs) buildInputs;
-        };
-      }
-    );
+        with pkgs; {
+          formatter = pkgs.alejandra;
+          packages = {
+            inherit wireguardGuiRelease wireguardGuiDebug;
+            default = wireguardGuiRelease; # Default to release build
+          };
+          checks = {
+            inherit
+              # Build the crate as part of `nix flake check` for convenience
+              wireguardGuiRelease
+              #    nwPcktFwdPackage-cargoAudit
+              
+              ;
+          };
+          devShells.default = craneLib.devShell {
+            # Inherit inputs from checks.
+            checks = self.checks.${system};
+            inherit (commonArgs) buildInputs;
+          };
+        }
+    )
+    // {
+      overlays.default = final: prev: {
+        wireguard-gui = self.packages.${prev.stdenv.hostPlatform.system}.default;
+      };
+    };
 }

@@ -1,7 +1,8 @@
 use std::fs;
-use std::io::{self, Error, Result, Write};
+use std::io::{self, Error, Result, Write,Read};
 use std::process::*;
-
+use std::time::Duration;
+use wait_timeout::ChildExt;
 use crate::config::{parse_config, WireguardConfig};
 
 pub const TUNNELS_PATH: &str = "/etc/wireguard";
@@ -55,6 +56,10 @@ pub fn generate_public_key(priv_key: String) -> Result<String> {
 
     let output = child.wait_with_output().expect("Failed to read stdout");
 
+    if output.stdout.is_empty() {
+        return Err(io::Error::other("Failed to generate public key"));
+    }
+
     String::from_utf8(output.stdout)
         .map(|s| s.trim().into())
         .map_err(|_| {
@@ -64,3 +69,40 @@ pub fn generate_public_key(priv_key: String) -> Result<String> {
             )
         })
 }
+
+
+    /// Run a command with a timeout and return the exit status and stdout output.
+pub fn run_cmd_with_timeout(
+        cmd: &mut Child,
+        timeout: u64,
+    ) -> io::Result<(Option<i32>, String)> {
+      
+        let one_sec = Duration::from_secs(timeout);
+        println!("Running command: {:?}", cmd);
+        // Wait for the process to exit or timeout
+        let status_code = match cmd.wait_timeout(one_sec)? {
+            Some(status) => {
+                cmd.kill()?;
+                status.code()
+            }
+            None => {
+                // Process hasn't exited yet, kill it and get the status code
+                println!("Killing the process: {:?}", cmd);
+                cmd.kill()?;
+                cmd.wait()?.code()
+            }
+        };
+
+        // Read stdout after killing the process
+        let mut s = String::new();
+
+        // Borrow stdout and read the output into `s`
+        if let Some(stdout) = cmd.stdout.as_mut() {
+            stdout.read_to_string(&mut s)?;
+        }
+
+        // Print the output line-by-line
+        println!("Status code: {:?},output:{:?}", status_code, s);
+        // Return both the status code and the output
+        Ok((status_code, s))
+    }

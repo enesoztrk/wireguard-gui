@@ -53,7 +53,9 @@ impl SimpleComponent for App {
                     set_orientation: gtk::Orientation::Vertical,
                     gtk::ScrolledWindow {
                         set_vexpand: true,
-
+                        set_hexpand: true,
+                        set_propagate_natural_width:true,
+                        set_min_content_width: 200,
                         #[local_ref]
                         tunnels_list_box -> gtk::ListBox {}
                     },
@@ -138,7 +140,7 @@ impl SimpleComponent for App {
                     accept_label: String::from("Import"),
                     cancel_label: String::from("Cancel"),
                     create_folders: false,
-                    is_modal: true,
+                    is_modal: true, 
                     filters: vec![{
                         let filter = gtk::FileFilter::new();
                         filter.add_pattern("*.conf");
@@ -211,6 +213,12 @@ impl SimpleComponent for App {
             }
             Self::Input::AddTunnel(config) => {
                 let mut tunnels = self.tunnels.guard();
+
+                if tunnels.iter().any(|t| t.config.interface.name == config.interface.name) {
+                    sender.input(Self::Input::Error(format!("Tunnel with name {} already exists", config.interface.name.as_ref().unwrap())));
+                    return;
+                }
+
                 tunnels.push_back(*config);
             }
             Self::Input::RemoveTunnel(idx) => {
@@ -235,6 +243,7 @@ impl SimpleComponent for App {
                         .map(|s| s.to_owned());
                 }
 
+
                 sender.input(Self::Input::AddTunnel(Box::new(config)));
             }
             Self::Input::SaveConfigInitiate => self.overview.emit(OverviewInput::CollectTunnel),
@@ -244,7 +253,7 @@ impl SimpleComponent for App {
                 };
                 if let Some(selected_tunnel) = self.tunnels.guard().get_mut(idx) {
                     if selected_tunnel.active {
-                        sender.input(Self::Input::Error(format!("Tunnel should be disabled before saving the configuration")));
+                        sender.input(Self::Input::Error("Tunnel should be disabled before saving the configuration".to_string()));
                         return;
                     }
                     let new_tunnel = Tunnel::new(*config);
