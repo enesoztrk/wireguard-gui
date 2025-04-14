@@ -39,7 +39,9 @@
         inherit (pkgs) lib;
 
         craneLib = crane.mkLib pkgs;
-        src = craneLib.cleanCargoSource ./.;
+        # FIXME: It breaks the check : "nix flake check --no-build -L --no-eval-cache --store $TMPSTORE"
+        #src = craneLib.cleanCargoSource ./.;
+        src = ./.;
         commonArgs = {
           inherit src;
           strictDeps = true;
