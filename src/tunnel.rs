@@ -1,3 +1,7 @@
+/*
+    Copyright 2025 TII (SSRC) and the contributors
+    SPDX-License-Identifier: Apache-2.0
+*/
 use std::{
     io::{self},
     path::{Path, PathBuf},
@@ -10,9 +14,9 @@ use relm4::prelude::*;
 use crate::config::*;
 use crate::utils::*;
 use getifaddrs::{getifaddrs, InterfaceFlags};
+use log::*;
 use std::net::SocketAddr;
 use std::str::FromStr;
-
 #[derive(PartialEq)]
 pub enum NetState {
     IplinkUp = 0x01,
@@ -57,6 +61,8 @@ impl Tunnel {
     }
 
     fn is_wg_iface_running(interface: &str) -> NetState {
+        let cmd_str = format!("wg show {}", interface);
+
         // Run `wg show <interface>`
         let mut wg_output = Command::new("wg")
             .arg("show")
@@ -64,19 +70,21 @@ impl Tunnel {
             .stdout(std::process::Stdio::piped())
             .spawn()
             .expect("Failed to execute wg show");
-        println!("wg show {}", interface);
-        if !run_cmd_with_timeout(&mut wg_output, 5)
+
+        debug!("running cmd: {cmd_str}");
+
+        if !run_cmd_with_timeout(&mut wg_output, 5, None)
             .map(|(code, output)| code == Some(0) && !output.is_empty())
             .unwrap_or(false)
         {
-            println!("Interface {} is not running", interface);
+            info!("Interface {} is not running", interface);
             return NetState::WgQuickDown;
         }
 
         if !Self::is_interface_up(interface).unwrap_or(false) {
             return NetState::IplinkDown;
         }
-        println!("Interface {} is running", interface);
+        info!("Interface {} is running", interface);
         NetState::WgQuickUp
     }
 
@@ -103,14 +111,17 @@ impl Tunnel {
 
         // Helper closure to run a command and check its success
         let run_wg_quick = |action: &str| -> Result<(), io::Error> {
+            let cmd_str = format!("wg-quick {} {}", action, &self.name);
+
             let mut cmd = Command::new("wg-quick")
                 .args([action, &self.name])
                 .spawn()?;
-            println!("wg-quick {}", action);
-            if !run_cmd_with_timeout(&mut cmd, 3)
+            debug!("running cmd: {cmd_str}");
+            if !run_cmd_with_timeout(&mut cmd, 3, Some(&cmd_str))
                 .map(|(code, _)| code == Some(0))
                 .unwrap_or(false)
             {
+                error!("Failed to execute wg-quick {} {}", action, &self.name);
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
                     format!("Failed to execute wg-quick {}", action),
@@ -210,7 +221,7 @@ impl FactoryComponent for Tunnel {
                         .output_sender()
                         .emit(Self::Output::Error(err.to_string())),
                 };
-                println!("state: {}", self.active);
+                debug!("connection state: {}", self.active);
                 _widgets.switch.set_state(self.active);
             }
         }
