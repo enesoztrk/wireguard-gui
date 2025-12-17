@@ -345,6 +345,7 @@ impl FactoryComponent for Tunnel {
         message: Self::CommandOutput,
         sender: FactorySender<Self>,
     ) {
+        error!("update_cmd_with_view called with message: {:?}", message);
         match message {
             TunnelCommandOutput::ToggleSuccess(new_active_state) => {
                 self.data.active = new_active_state;
@@ -352,7 +353,7 @@ impl FactoryComponent for Tunnel {
                 debug!("connection state: {}", self.data.active);
             }
             TunnelCommandOutput::ToggleError(err) => {
-                trace!("Emitting TunnelOutput::Error to main app: {}", err);
+                error!("Emitting TunnelOutput::Error to main app: {}", err);
                 sender.output_sender().emit(TunnelOutput::Error(err));
                 widgets.switch.set_state(self.data.active); // Revert switch state
             }
