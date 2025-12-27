@@ -615,27 +615,52 @@ impl SimpleComponent for App {
                 self.overview.emit(OverviewInput::InitIfaceBindings(b));
             }
             Self::Input::Error(msg) => {
-                self.alert_dialog
-                    .state()
-                    .get_mut()
-                    .model
-                    .settings
-                    .secondary_text = Some(msg);
-                self.alert_dialog.state().get_mut().model.settings.text =
-                    Some(String::from("Error"));
+                error!("Error message received: {}", msg);
 
-                self.alert_dialog.emit(AlertMsg::Show);
+                // Update both settings in a single mutable borrow
+                {
+                    let mut state = self.alert_dialog.state().get_mut();
+                    state.model.settings.secondary_text = Some(msg.clone());
+                    state.model.settings.text = Some(String::from("Error"));
+                }
+
+                debug!("Attempting to show error dialog for: {}", msg);
+                if let Err(e) = self.alert_dialog.sender().send(AlertMsg::Show) {
+                    error!("Failed to send AlertMsg::Show: {:?}", e);
+                } else {
+                    // Force the dialog window to present itself after the message is processed
+                    let dialog_widget = self.alert_dialog.widget().clone();
+                    gtk::glib::idle_add_local_once(move || {
+                        dialog_widget.set_visible(true);
+                        dialog_widget.present();
+                        debug!("Dialog set_visible(true) and present() called");
+                    });
+                }
+                debug!("Error dialog send completed");
             }
             Self::Input::Info(msg) => {
-                self.alert_dialog
-                    .state()
-                    .get_mut()
-                    .model
-                    .settings
-                    .secondary_text = Some(msg);
-                self.alert_dialog.state().get_mut().model.settings.text =
-                    Some(String::from("Info"));
-                self.alert_dialog.emit(AlertMsg::Show);
+                info!("Info message received: {}", msg);
+
+                // Update both settings in a single mutable borrow
+                {
+                    let mut state = self.alert_dialog.state().get_mut();
+                    state.model.settings.secondary_text = Some(msg.clone());
+                    state.model.settings.text = Some(String::from("Info"));
+                }
+
+                debug!("Attempting to show info dialog for: {}", msg);
+                if let Err(e) = self.alert_dialog.sender().send(AlertMsg::Show) {
+                    error!("Failed to send AlertMsg::Show: {:?}", e);
+                } else {
+                    // Force the dialog window to present itself after the message is processed
+                    let dialog_widget = self.alert_dialog.widget().clone();
+                    gtk::glib::idle_add_local_once(move || {
+                        dialog_widget.set_visible(true);
+                        dialog_widget.present();
+                        debug!("Dialog set_visible(true) and present() called");
+                    });
+                }
+                debug!("Info dialog send completed");
             }
             Self::Input::AddInitErrors(msg) => {
                 self.init_err_buffer.push(msg);

@@ -354,7 +354,12 @@ impl FactoryComponent for Tunnel {
             }
             TunnelCommandOutput::ToggleError(err) => {
                 error!("Emitting TunnelOutput::Error to main app: {}", err);
-                sender.output_sender().emit(TunnelOutput::Error(err));
+                if let Err(e) = sender.output_sender().send(TunnelOutput::Error(err)) {
+                    error!("CRITICAL: Failed to send TunnelOutput::Error: {:?}", e);
+                    error!("Parent receiver may have been dropped!");
+                } else {
+                    debug!("Successfully sent TunnelOutput::Error to main app");
+                }
                 widgets.switch.set_state(self.data.active); // Revert switch state
             }
         }
